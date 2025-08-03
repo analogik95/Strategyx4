@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy World - Mobile First</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            overflow: hidden;
+            user-select: none;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Mobile-first design */
+        #main-view {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+            min-height: 0;
+        }
+
+        #map-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+            image-rendering: crisp-edges;
+        }
+
+        #map-canvas:active {
+            cursor: grabbing;
+        }
+
+        /* Mobile-optimized UI overlay */
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* Top bar - mobile optimized */
+        #top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.95), rgba(0,0,0,0.8));
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            pointer-events: all;
+            border-bottom: 1px solid #444;
+            z-index: 101;
+        }
+
+        .resource-display {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .resource-display::-webkit-scrollbar {
+            display: none;
+        }
+
+        .resource-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            white-space: nowrap;
+            min-width: fit-content;
+        }
+
+        .resource-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .gold { background: #FFD700; color: #000; }
+        .science { background: #4169E1; }
+        .culture { background: #8B008B; }
+        .production { background: #8B4513; }
+        .food { background: #228B22; }
+
+        #turn-display {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-right: 8px;
+        }
+
+        #end-turn-btn {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: #000;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(255,215,0,0.3);
+        }
+
+        #end-turn-btn:hover, #end-turn-btn:active {
+            transform: scale(0.95);
+            box-shadow: 0 4px 12px rgba(255,215,0,0.5);
+        }
+
+        /* Mobile bottom panel */
+        #bottom-panel {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.8));
+            border-top: 1px solid #444;
+            pointer-events: all;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            z-index: 102;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        #bottom-panel.open {
+            transform: translateY(0);
+        }
+
+        #panel-toggle {
+            position: absolute;
+            top: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            border: 1px solid #444;
+            border-radius: 20px 20px 0 0;
+            padding: 8px 20px;
+            color: #FFD700;
+            font-size: 12px;
+            cursor: pointer;
+            pointer-events: all;
+        }
+
+        .panel-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel-section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .panel-header {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #FFD700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Fog of war controls */
+        #fog-controls {
+            position: absolute;
+            top: 60px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            pointer-events: all;
+        }
+
+        .fog-btn {
+            padding: 8px;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .fog-btn.active {
+            background: #4169E1;
+            border-color: #1E90FF;
+        }
+
+        /* Loading screen */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .loading-content {
+            text-align: center;
+        }
+
+        .loading-title {
+            font-size: 32px;
+            color: #FFD700;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+
+        .loading-bar {
+            width: 250px;
+            height: 20px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid #444;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .loading-progress {
+            height: 100%;
+            background: linear-gradient(90deg, #FFD700, #FFA500);
+            transition: width 0.3s;
+            box-shadow: 0 0 15px rgba(255,215,0,0.5);
+        }
+
+        .loading-text {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        /* Notification system */
+        #notification-container {
+            position: absolute;
+            top: 70px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+            z-index: 150;
+        }
+
+        .notification {
+            background: rgba(0,0,0,0.9);
+            border: 1px solid #FFD700;
+            border-radius: 8px;
+            padding: 10px 15px;
+            animation: slideIn 0.5s ease-out;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            font-size: 14px;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Desktop styles */
+        @media (min-width: 768px) {
+            #top-bar {
+                height: 60px;
+                padding: 0 20px;
+            }
+
+            .resource-item {
+                font-size: 18px;
+                gap: 8px;
+            }
+
+            .resource-icon {
+                width: 30px;
+                height: 30px;
+                font-size: 16px;
+            }
+
+            #turn-display {
+                font-size: 20px;
+            }
+
+            #end-turn-btn {
+                padding: 12px 30px;
+                font-size: 18px;
+            }
+
+            #bottom-panel {
+                position: static;
+                transform: none;
+                width: 350px;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                max-height: none;
+                border-left: 2px solid #444;
+                border-top: none;
+            }
+
+            #panel-toggle {
+                display: none;
+            }
+
+            #main-view {
+                margin-right: 350px;
+            }
+
+            .loading-title {
+                font-size: 48px;
+                margin-bottom: 30px;
+            }
+
+            .loading-bar {
+                width: 400px;
+                height: 30px;
+            }
+
+            .loading-text {
+                font-size: 18px;
+                margin-top: 20px;
+            }
+
+            #notification-container {
+                top: 80px;
+                right: 370px;
+                left: auto;
+                width: 300px;
+            }
+            
+            .notification {
+                font-size: 16px;
+                padding: 15px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-title">Strategy World</div>
+            <div class="loading-bar">
+                <div class="loading-progress" style="width: 0%"></div>
+            </div>
+            <div class="loading-text">Generating World Map...</div>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <div id="main-view">
+            <canvas id="map-canvas"></canvas>
+            
+            <div id="ui-overlay">
+                <div id="top-bar">
+                    <div class="resource-display">
+                        <div class="resource-item">
+                            <div class="resource-icon gold">💰</div>
+                            <span id="gold-display">100</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon science">🔬</div>
+                            <span id="science-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon culture">🎭</div>
+                            <span id="culture-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon production">⚒️</div>
+                            <span id="production-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon food">🌾</div>
+                            <span id="food-display">0</span>
+                        </div>
+                    </div>
+                    <div id="turn-display">Turn 1</div>
+                    <button id="end-turn-btn">End Turn</button>
+                </div>
+
+                <div id="fog-controls">
+                    <button class="fog-btn active" id="fog-toggle">Fog of War</button>
+                    <button class="fog-btn" id="reveal-all">Reveal All</button>
+                </div>
+
+                <div id="notification-container"></div>
+            </div>
+        </div>
+
+        <div id="bottom-panel">
+            <div id="panel-toggle">📋 Game Info</div>
+            <div class="panel-content">
+                <div class="panel-section" id="unit-panel" style="display: none;">
+                    <div class="panel-header">Unit Info</div>
+                    <div class="unit-info">
+                        <div class="unit-stat">
+                            <span>Type:</span>
+                            <span id="unit-type">-</span>
+                        </div>
+                        <div class="unit-stat">
+                            <span>Health:</span>
+                            <span id="unit-health">-</span>
+                        </div>
+                        <div class="unit-stat">
+                            <span>Strength:</span>
+                            <span id="unit-strength">-</span>
+                        </div>
+                        <div class="unit-stat">
+                            <span>Movement:</span>
+                            <span id="unit-movement">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="panel-header">Controls</div>
+                    <div style="font-size: 12px; line-height: 1.6;">
+                        <div>👆 Tap - Select unit/city</div>
+                        <div>🖱️ Drag - Pan camera</div>
+                        <div>🔍 Pinch - Zoom in/out</div>
+                        <div>⌨️ Space - End turn</div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="panel-header">Victory Progress</div>
+                    <div style="font-size: 12px; line-height: 1.6;">
+                        <div>🏛️ Control Capitals: <span id="capitals-controlled">1/4</span></div>
+                        <div>🔬 Technologies: <span id="tech-progress">0/20</span></div>
+                        <div>🎭 Culture Level: <span id="culture-level">0</span></div>
+                        <div>🗺️ World Explored: <span id="world-explored">5%</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game constants
+        const HEX_SIZE = 20;
+        const HEX_WIDTH = HEX_SIZE * 2;
+        const HEX_HEIGHT = Math.sqrt(3) * HEX_SIZE;
+        const MAP_WIDTH = 120;  // Large world map
+        const MAP_HEIGHT = 80;
+        
+        // Terrain types
+        const TERRAIN = {
+            OCEAN: { 
+                name: 'Ocean', 
+                color: '#1a4d8f', 
+                movement: Infinity, 
+                yields: { food: 1, production: 0, gold: 1 }
+            },
+            COAST: { 
+                name: 'Coast', 
+                color: '#2d6bb5', 
+                movement: 1, 
+                yields: { food: 1, production: 0, gold: 2 }
+            },
+            PLAINS: { 
+                name: 'Plains', 
+                color: '#c4a574', 
+                movement: 1, 
+                yields: { food: 1, production: 1, gold: 0 }
+            },
+            GRASSLAND: { 
+                name: 'Grassland', 
+                color: '#7cb342', 
+                movement: 1, 
+                yields: { food: 2, production: 0, gold: 0 }
+            },
+            DESERT: { 
+                name: 'Desert', 
+                color: '#f4d03f', 
+                movement: 1, 
+                yields: { food: 0, production: 0, gold: 1 }
+            },
+            TUNDRA: { 
+                name: 'Tundra', 
+                color: '#90a4ae', 
+                movement: 1, 
+                yields: { food: 1, production: 0, gold: 0 }
+            },
+            HILL: { 
+                name: 'Hill', 
+                color: '#8d6e63', 
+                movement: 2, 
+                yields: { food: 0, production: 2, gold: 0 }
+            },
+            MOUNTAIN: { 
+                name: 'Mountain', 
+                color: '#616161', 
+                movement: Infinity, 
+                yields: { food: 0, production: 0, gold: 0 }
+            },
+            FOREST: { 
+                name: 'Forest', 
+                color: '#2e7d32', 
+                movement: 2, 
+                yields: { food: 1, production: 1, gold: 0 }
+            }
+        };
+
+        // Unit types with vision ranges for fog of war
+        const UNIT_TYPES = {
+            WARRIOR: { name: 'Warrior', icon: '⚔️', strength: 8, movement: 2, cost: 40, type: 'melee', visionRange: 2 },
+            ARCHER: { name: 'Archer', icon: '🏹', strength: 5, rangedStrength: 7, range: 2, movement: 2, cost: 40, type: 'ranged', visionRange: 3 },
+            SETTLER: { name: 'Settler', icon: '🏠', strength: 0, movement: 2, cost: 80, type: 'civilian', visionRange: 2 },
+            SCOUT: { name: 'Scout', icon: '🕵️', strength: 5, movement: 3, cost: 25, type: 'recon', visionRange: 4 }
+        };
+
+        // Game state with fog of war
+        let gameState = {
+            turn: 1,
+            currentPlayer: 0,
+            players: [],
+            map: [],
+            units: [],
+            cities: [],
+            selectedUnit: null,
+            selectedCity: null,
+            camera: { x: 0, y: 0, zoom: 1 },
+            resources: { gold: 100, science: 0, culture: 0, production: 0, food: 0 },
+            fogOfWar: true,
+            exploredTiles: new Set(),
+            visibleTiles: new Set()
+        };
+
+        // Hex coordinate utilities
+        function hexToPixel(col, row) {
+            const x = HEX_SIZE * (3/2 * col);
+            const y = HEX_SIZE * (Math.sqrt(3)/2 * col + Math.sqrt(3) * row);
+            return { x, y };
+        }
+
+        function pixelToHex(x, y) {
+            const col = (2/3 * x) / HEX_SIZE;
+            const row = (-1/3 * x + Math.sqrt(3)/3 * y) / HEX_SIZE;
+            return hexRound(col, row);
+        }
+
+        function hexRound(col, row) {
+            const cube_x = col;
+            const cube_z = row;
+            const cube_y = -cube_x - cube_z;
+            
+            let rx = Math.round(cube_x);
+            let ry = Math.round(cube_y);
+            let rz = Math.round(cube_z);
+            
+            const x_diff = Math.abs(rx - cube_x);
+            const y_diff = Math.abs(ry - cube_y);
+            const z_diff = Math.abs(rz - cube_z);
+            
+            if (x_diff > y_diff && x_diff > z_diff) {
+                rx = -ry - rz;
+            } else if (y_diff > z_diff) {
+                ry = -rx - rz;
+            } else {
+                rz = -rx - ry;
+            }
+            
+            return { col: rx, row: rz };
+        }
+
+        function drawHexagon(ctx, x, y, size, fillStyle, strokeStyle = '#333') {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = Math.PI / 3 * i;
+                const px = x + size * Math.cos(angle);
+                const py = y + size * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            
+            if (fillStyle) {
+                ctx.fillStyle = fillStyle;
+                ctx.fill();
+            }
+            
+            if (strokeStyle) {
+                ctx.strokeStyle = strokeStyle;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        // World map generation
+        function generateWorldMap() {
+            console.log('Generating world map...');
+            gameState.map = [];
+            
+            // Initialize all tiles as ocean
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
+                    const tile = {
+                        x: col,
+                        y: row,
+                        terrain: TERRAIN.OCEAN,
+                        unit: null,
+                        city: null,
+                        explored: false,
+                        visible: false,
+                        elevation: 0
+                    };
+                    gameState.map.push(tile);
+                }
+            }
+            
+            // Generate realistic continents
+            generateContinents();
+            addClimateZones();
+            addTerrainFeatures();
+            
+            console.log('World map generated successfully');
+        }
+
+        function generateContinents() {
+            // Create major continents with realistic shapes
+            const continents = [
+                // North America-like continent
+                { centerX: 25, centerY: 20, width: 20, height: 25, type: 'temperate' },
+                // Europe/Asia-like continent  
+                { centerX: 70, centerY: 15, width: 35, height: 20, type: 'temperate' },
+                // Africa-like continent
+                { centerX: 65, centerY: 35, width: 15, height: 30, type: 'tropical' },
+                // South America-like continent
+                { centerX: 30, centerY: 50, width: 12, height: 20, type: 'tropical' },
+                // Australia-like continent
+                { centerX: 90, centerY: 55, width: 15, height: 10, type: 'arid' }
+            ];
+
+            continents.forEach(continent => {
+                generateContinent(continent);
+            });
+
+            // Add islands
+            for (let i = 0; i < 25; i++) {
+                const x = Math.floor(Math.random() * MAP_WIDTH);
+                const y = Math.floor(Math.random() * MAP_HEIGHT);
+                const size = 3 + Math.floor(Math.random() * 8);
+                
+                const tile = getTile(x, y);
+                if (tile && tile.terrain === TERRAIN.OCEAN) {
+                    generateIsland(x, y, size);
+                }
+            }
+        }
+
+        function generateContinent(continent) {
+            const { centerX, centerY, width, height, type } = continent;
+            
+            for (let y = Math.max(0, centerY - height/2); y < Math.min(MAP_HEIGHT, centerY + height/2); y++) {
+                for (let x = Math.max(0, centerX - width/2); x < Math.min(MAP_WIDTH, centerX + width/2); x++) {
+                    const distX = (x - centerX) / (width/2);
+                    const distY = (y - centerY) / (height/2);
+                    const distance = Math.sqrt(distX * distX + distY * distY);
+                    
+                    // Use noise for natural continent edges
+                    const noise = (Math.sin(x * 0.1) + Math.cos(y * 0.1)) * 0.3;
+                    const probability = Math.max(0, 1 - distance + noise);
+                    
+                    if (Math.random() < probability) {
+                        const tile = getTile(x, y);
+                        if (tile) {
+                            tile.terrain = TERRAIN.GRASSLAND;
+                            tile.elevation = 1 + Math.random() * 2;
+                            tile.continentType = type;
+                        }
+                    }
+                }
+            }
+        }
+
+        function generateIsland(startX, startY, size) {
+            const queue = [{ x: startX, y: startY, distance: 0 }];
+            const visited = new Set();
+            let tilesCreated = 0;
+            
+            while (queue.length > 0 && tilesCreated < size) {
+                const current = queue.shift();
+                const key = `${current.x},${current.y}`;
+                
+                if (visited.has(key)) continue;
+                visited.add(key);
+                
+                const tile = getTile(current.x, current.y);
+                if (!tile || tile.terrain !== TERRAIN.OCEAN) continue;
+                
+                const expansionChance = Math.max(0.2, 1 - (current.distance / size));
+                if (Math.random() < expansionChance) {
+                    tile.terrain = TERRAIN.GRASSLAND;
+                    tile.elevation = 1 + Math.random() * 1;
+                    tilesCreated++;
+                    
+                    // Add neighbors
+                    const neighbors = getHexNeighbors(current.x, current.y);
+                    neighbors.forEach(neighbor => {
+                        const neighborKey = `${neighbor.x},${neighbor.y}`;
+                        if (!visited.has(neighborKey)) {
+                            queue.push({ 
+                                x: neighbor.x, 
+                                y: neighbor.y, 
+                                distance: current.distance + 1 
+                            });
+                        }
+                    });
+                }
+            }
+        }
+
+        function addClimateZones() {
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
+                    const tile = getTile(col, row);
+                    if (!tile || tile.terrain === TERRAIN.OCEAN) continue;
+                    
+                    // Latitude-based climate zones
+                    const latitude = row / MAP_HEIGHT;
+                    const noise = Math.sin(col * 0.05) * 0.1;
+                    const climate = latitude + noise;
+                    
+                    if (climate < 0.15 || climate > 0.85) {
+                        // Polar regions
+                        if (Math.random() < 0.7) tile.terrain = TERRAIN.TUNDRA;
+                    } else if (climate < 0.3 || climate > 0.7) {
+                        // Temperate regions
+                        const rand = Math.random();
+                        if (rand < 0.4) tile.terrain = TERRAIN.PLAINS;
+                        else if (rand < 0.7) tile.terrain = TERRAIN.GRASSLAND;
+                        else if (rand < 0.85) tile.terrain = TERRAIN.FOREST;
+                    } else {
+                        // Tropical/subtropical regions
+                        const rand = Math.random();
+                        if (rand < 0.3) tile.terrain = TERRAIN.DESERT;
+                        else if (rand < 0.6) tile.terrain = TERRAIN.GRASSLAND;
+                        else tile.terrain = TERRAIN.FOREST;
+                    }
+                }
+            }
+        }
+
+        function addTerrainFeatures() {
+            // Add mountain ranges
+            addMountainRanges();
+            
+            // Add coastal areas
+            addCoastalAreas();
+            
+            // Add hills near mountains
+            addHills();
+        }
+
+        function addMountainRanges() {
+            const ranges = [
+                { startX: 30, startY: 25, length: 15, direction: { x: 0, y: 1 } },
+                { startX: 35, startY: 55, length: 10, direction: { x: 0, y: 1 } },
+                { startX: 75, startY: 25, length: 20, direction: { x: 1, y: 0 } },
+                { startX: 70, startY: 15, length: 12, direction: { x: 1, y: 0 } }
+            ];
+
+            ranges.forEach(range => {
+                let { startX, startY, length, direction } = range;
+                
+                for (let i = 0; i < length; i++) {
+                    const x = Math.floor(startX + direction.x * i + (Math.random() - 0.5) * 2);
+                    const y = Math.floor(startY + direction.y * i + (Math.random() - 0.5) * 2);
+                    
+                    const tile = getTile(x, y);
+                    if (tile && tile.terrain !== TERRAIN.OCEAN) {
+                        tile.terrain = TERRAIN.MOUNTAIN;
+                        tile.elevation = 3 + Math.random() * 2;
+                    }
+                }
+            });
+        }
+
+        function addCoastalAreas() {
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
+                    const tile = getTile(col, row);
+                    if (!tile || tile.terrain !== TERRAIN.OCEAN) continue;
+                    
+                    const neighbors = getHexNeighbors(col, row);
+                    const hasLandNeighbor = neighbors.some(neighbor => {
+                        const neighborTile = getTile(neighbor.x, neighbor.y);
+                        return neighborTile && neighborTile.terrain !== TERRAIN.OCEAN;
+                    });
+                    
+                    if (hasLandNeighbor && Math.random() < 0.8) {
+                        tile.terrain = TERRAIN.COAST;
+                        tile.elevation = 0;
+                    }
+                }
+            }
+        }
+
+        function addHills() {
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
+                    const tile = getTile(col, row);
+                    if (!tile || tile.terrain === TERRAIN.OCEAN || tile.terrain === TERRAIN.COAST || tile.terrain === TERRAIN.MOUNTAIN) continue;
+                    
+                    const neighbors = getHexNeighbors(col, row);
+                    const nearMountain = neighbors.some(neighbor => {
+                        const neighborTile = getTile(neighbor.x, neighbor.y);
+                        return neighborTile && neighborTile.terrain === TERRAIN.MOUNTAIN;
+                    });
+                    
+                    if (nearMountain && Math.random() < 0.4) {
+                        tile.terrain = TERRAIN.HILL;
+                        tile.elevation = 2 + Math.random() * 1;
+                    }
+                }
+            }
+        }
+
+        function getHexNeighbors(col, row) {
+            const directions = [
+                { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
+                { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 }
+            ];
+            
+            return directions
+                .map(dir => ({ x: col + dir.x, y: row + dir.y }))
+                .filter(pos => pos.x >= 0 && pos.x < MAP_WIDTH && pos.y >= 0 && pos.y < MAP_HEIGHT);
+        }
+
+        function getTile(x, y) {
+            if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return null;
+            return gameState.map[y * MAP_WIDTH + x];
+        }
+
+        // Fog of War system
+        function updateFogOfWar() {
+            if (!gameState.fogOfWar) {
+                // Reveal all tiles
+                gameState.map.forEach(tile => {
+                    tile.visible = true;
+                    tile.explored = true;
+                });
+                return;
+            }
+
+            // Hide all tiles first
+            gameState.map.forEach(tile => {
+                tile.visible = false;
+            });
+
+            // Calculate visible tiles based on unit positions
+            gameState.visibleTiles.clear();
+            
+            gameState.units
+                .filter(unit => unit.owner === gameState.currentPlayer)
+                .forEach(unit => {
+                    const visionRange = unit.type.visionRange || 2;
+                    const visibleTiles = getTilesInRange(unit.x, unit.y, visionRange);
+                    
+                    visibleTiles.forEach(tile => {
+                        tile.visible = true;
+                        tile.explored = true;
+                        gameState.visibleTiles.add(`${tile.x},${tile.y}`);
+                        gameState.exploredTiles.add(`${tile.x},${tile.y}`);
+                    });
+                });
+
+            updateExplorationProgress();
+        }
+
+        function getTilesInRange(centerX, centerY, range) {
+            const tiles = [];
+            
+            for (let dx = -range; dx <= range; dx++) {
+                for (let dy = -range; dy <= range; dy++) {
+                    const x = centerX + dx;
+                    const y = centerY + dy;
+                    const distance = Math.abs(dx) + Math.abs(dy) + Math.abs(-dx - dy);
+                    
+                    if (distance <= range * 2) {
+                        const tile = getTile(x, y);
+                        if (tile) {
+                            tiles.push(tile);
+                        }
+                    }
+                }
+            }
+            
+            return tiles;
+        }
+
+        function updateExplorationProgress() {
+            const totalTiles = gameState.map.filter(tile => tile.terrain !== TERRAIN.OCEAN).length;
+            const exploredCount = Array.from(gameState.exploredTiles).filter(tileKey => {
+                const [x, y] = tileKey.split(',').map(Number);
+                const tile = getTile(x, y);
+                return tile && tile.terrain !== TERRAIN.OCEAN;
+            }).length;
+            const explorationPercent = Math.floor((exploredCount / totalTiles) * 100);
+            
+            document.getElementById('world-explored').textContent = `${explorationPercent}%`;
+        }
+
+        // Rendering with fog of war
+        function drawMap() {
+            const canvas = document.getElementById('map-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Make canvas responsive
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            
+            // Clear canvas
+            ctx.fillStyle = '#000511';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Calculate visible area based on camera
+            const startCol = Math.max(0, Math.floor((gameState.camera.x) / (HEX_SIZE * 1.5)));
+            const endCol = Math.min(MAP_WIDTH, Math.ceil((gameState.camera.x + canvas.width) / (HEX_SIZE * 1.5)));
+            const startRow = Math.max(0, Math.floor((gameState.camera.y) / HEX_HEIGHT));
+            const endRow = Math.min(MAP_HEIGHT, Math.ceil((gameState.camera.y + canvas.height) / HEX_HEIGHT));
+            
+            // Draw tiles
+            for (let row = startRow; row < endRow; row++) {
+                for (let col = startCol; col < endCol; col++) {
+                    const tile = getTile(col, row);
+                    if (tile) {
+                        drawHexTile(ctx, tile);
+                    }
+                }
+            }
+            
+            // Draw units (only visible ones)
+            gameState.units.forEach(unit => {
+                const tile = getTile(unit.x, unit.y);
+                if (tile && (tile.visible || !gameState.fogOfWar)) {
+                    drawUnit(ctx, unit);
+                }
+            });
+        }
+
+        function drawHexTile(ctx, tile) {
+            const pixelPos = hexToPixel(tile.x, tile.y);
+            const x = pixelPos.x + HEX_SIZE - gameState.camera.x;
+            const y = pixelPos.y + HEX_SIZE - gameState.camera.y;
+            
+            // Skip if outside viewport
+            if (x < -HEX_SIZE * 2 || x > ctx.canvas.width + HEX_SIZE * 2 || 
+                y < -HEX_SIZE * 2 || y > ctx.canvas.height + HEX_SIZE * 2) {
+                return;
+            }
+            
+            // Determine tile visibility and coloring
+            let tileColor = tile.terrain.color;
+            let alpha = 1.0;
+            
+            if (gameState.fogOfWar) {
+                if (!tile.explored) {
+                    // Completely unexplored - render as black
+                    tileColor = '#000000';
+                    alpha = 1.0;
+                } else if (!tile.visible) {
+                    // Explored but not currently visible - darkened
+                    tileColor = darkenColor(tile.terrain.color, 60);
+                    alpha = 0.7;
+                }
+            }
+            
+            // Create gradient for depth effect
+            const gradient = ctx.createRadialGradient(
+                x - HEX_SIZE/3, y - HEX_SIZE/3, 0,
+                x + HEX_SIZE/3, y + HEX_SIZE/3, HEX_SIZE
+            );
+            
+            const lightColor = lightenColor(tileColor, 20);
+            const darkColor = darkenColor(tileColor, 15);
+            
+            gradient.addColorStop(0, lightColor);
+            gradient.addColorStop(0.6, tileColor);
+            gradient.addColorStop(1, darkColor);
+            
+            // Draw main hexagon
+            ctx.globalAlpha = alpha;
+            drawHexagon(ctx, x, y, HEX_SIZE * 0.9, gradient, '#2a2a2a');
+            ctx.globalAlpha = 1.0;
+        }
+
+        function lightenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = ((num >> 8) & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+        }
+
+        function darkenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) - amt;
+            const G = ((num >> 8) & 0x00FF) - amt;
+            const B = (num & 0x0000FF) - amt;
+            return '#' + (0x1000000 + (R > 255 ? 255 : R < 0 ? 0 : R) * 0x10000 +
+                (G > 255 ? 255 : G < 0 ? 0 : G) * 0x100 +
+                (B > 255 ? 255 : B < 0 ? 0 : B)).toString(16).slice(1);
+        }
+
+        function drawUnit(ctx, unit) {
+            const pixelPos = hexToPixel(unit.x, unit.y);
+            const x = pixelPos.x + HEX_SIZE - gameState.camera.x;
+            const y = pixelPos.y + HEX_SIZE - gameState.camera.y;
+            
+            // Skip if outside viewport
+            if (x < -HEX_SIZE * 2 || x > ctx.canvas.width + HEX_SIZE * 2 || 
+                y < -HEX_SIZE * 2 || y > ctx.canvas.height + HEX_SIZE * 2) {
+                return;
+            }
+            
+            // Draw unit background
+            const gradient = ctx.createRadialGradient(x-3, y-3, 0, x, y, HEX_SIZE/3);
+            gradient.addColorStop(0, lightenColor(gameState.players[unit.owner].color, 40));
+            gradient.addColorStop(1, darkenColor(gameState.players[unit.owner].color, 20));
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, HEX_SIZE/3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw unit border
+            ctx.strokeStyle = darkenColor(gameState.players[unit.owner].color, 40);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Draw unit icon
+            ctx.fillStyle = '#FFF';
+            ctx.font = `bold ${Math.max(12, HEX_SIZE/2)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeText(unit.type.icon, x, y);
+            ctx.fillText(unit.type.icon, x, y);
+            
+            // Draw selection indicator
+            if (gameState.selectedUnit === unit) {
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.arc(x, y, HEX_SIZE/3 + 6, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        // Setup players and initial units
+        function setupPlayers() {
+            gameState.players = [
+                { id: 0, name: 'Player', color: '#FF0000', isHuman: true },
+                { id: 1, name: 'AI 1', color: '#0000FF', isHuman: false },
+                { id: 2, name: 'AI 2', color: '#00FF00', isHuman: false },
+                { id: 3, name: 'AI 3', color: '#FFFF00', isHuman: false }
+            ];
+        }
+
+        function spawnInitialUnits() {
+            // Find suitable starting locations
+            const startingLocations = [];
+            
+            for (let attempts = 0; attempts < 100 && startingLocations.length < 4; attempts++) {
+                const x = 10 + Math.floor(Math.random() * (MAP_WIDTH - 20));
+                const y = 10 + Math.floor(Math.random() * (MAP_HEIGHT - 20));
+                const tile = getTile(x, y);
+                
+                if (tile && (tile.terrain === TERRAIN.GRASSLAND || tile.terrain === TERRAIN.PLAINS)) {
+                    const neighbors = getHexNeighbors(x, y);
+                    const hasCoast = neighbors.some(neighbor => {
+                        const neighborTile = getTile(neighbor.x, neighbor.y);
+                        return neighborTile && neighborTile.terrain === TERRAIN.COAST;
+                    });
+                    
+                    if (hasCoast) {
+                        const tooClose = startingLocations.some(loc => {
+                            const distance = Math.sqrt((x - loc.x) ** 2 + (y - loc.y) ** 2);
+                            return distance < 15;
+                        });
+                        
+                        if (!tooClose) {
+                            startingLocations.push({ x, y });
+                        }
+                    }
+                }
+            }
+            
+            // Fallback to any suitable land tile
+            while (startingLocations.length < 4) {
+                const x = 10 + Math.floor(Math.random() * (MAP_WIDTH - 20));
+                const y = 10 + Math.floor(Math.random() * (MAP_HEIGHT - 20));
+                const tile = getTile(x, y);
+                
+                if (tile && tile.terrain !== TERRAIN.OCEAN && tile.terrain !== TERRAIN.MOUNTAIN) {
+                    const tooClose = startingLocations.some(loc => {
+                        const distance = Math.sqrt((x - loc.x) ** 2 + (y - loc.y) ** 2);
+                        return distance < 15;
+                    });
+                    
+                    if (!tooClose) {
+                        startingLocations.push({ x, y });
+                    }
+                }
+            }
+            
+            // Spawn starting units for each player
+            gameState.players.forEach((player, index) => {
+                if (index < startingLocations.length) {
+                    const location = startingLocations[index];
+                    
+                    // Spawn settler
+                    spawnUnit(UNIT_TYPES.SETTLER, location.x, location.y, player.id);
+                    
+                    // Spawn scout for exploration
+                    const scoutPos = findEmptyAdjacentTile(location.x, location.y);
+                    if (scoutPos) {
+                        spawnUnit(UNIT_TYPES.SCOUT, scoutPos.x, scoutPos.y, player.id);
+                    }
+                    
+                    // Spawn warrior for protection  
+                    const warriorPos = findEmptyAdjacentTile(location.x, location.y);
+                    if (warriorPos) {
+                        spawnUnit(UNIT_TYPES.WARRIOR, warriorPos.x, warriorPos.y, player.id);
+                    }
+                }
+            });
+            
+            // Center camera on player's starting position
+            if (startingLocations.length > 0) {
+                const playerStart = startingLocations[0];
+                const pixelPos = hexToPixel(playerStart.x, playerStart.y);
+                gameState.camera.x = pixelPos.x - window.innerWidth / 2;
+                gameState.camera.y = pixelPos.y - window.innerHeight / 2;
+            }
+            
+            updateFogOfWar();
+        }
+
+        function findEmptyAdjacentTile(centerX, centerY) {
+            const neighbors = getHexNeighbors(centerX, centerY);
+            for (const neighbor of neighbors) {
+                const tile = getTile(neighbor.x, neighbor.y);
+                if (tile && !tile.unit && tile.terrain !== TERRAIN.OCEAN && tile.terrain !== TERRAIN.MOUNTAIN) {
+                    return neighbor;
+                }
+            }
+            return null;
+        }
+
+        function spawnUnit(unitType, x, y, playerId) {
+            const unit = {
+                id: gameState.units.length,
+                type: unitType,
+                x: x,
+                y: y,
+                owner: playerId,
+                health: 100,
+                movement: unitType.movement,
+                maxMovement: unitType.movement,
+                fortified: false,
+                skipTurn: false
+            };
+            
+            gameState.units.push(unit);
+            const tile = getTile(x, y);
+            if (tile) tile.unit = unit;
+            
+            return unit;
+        }
+
+        // Input handling with mobile support
+        function setupEventListeners() {
+            const canvas = document.getElementById('map-canvas');
+            
+            // Mouse events
+            canvas.addEventListener('click', handleCanvasClick);
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            
+            // Touch events for mobile
+            canvas.addEventListener('touchstart', handleTouchStart);
+            canvas.addEventListener('touchmove', handleTouchMove);
+            canvas.addEventListener('touchend', handleTouchEnd);
+            
+            // UI events
+            document.getElementById('end-turn-btn').addEventListener('click', endTurn);
+            
+            // Mobile panel toggle
+            document.getElementById('panel-toggle').addEventListener('click', () => {
+                const panel = document.getElementById('bottom-panel');
+                panel.classList.toggle('open');
+            });
+            
+            // Fog of war controls
+            document.getElementById('fog-toggle').addEventListener('click', () => {
+                gameState.fogOfWar = !gameState.fogOfWar;
+                document.getElementById('fog-toggle').classList.toggle('active', gameState.fogOfWar);
+                updateFogOfWar();
+                drawMap();
+            });
+            
+            document.getElementById('reveal-all').addEventListener('click', () => {
+                gameState.fogOfWar = false;
+                document.getElementById('fog-toggle').classList.remove('active');
+                updateFogOfWar();
+                drawMap();
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    endTurn();
+                }
+            });
+            
+            // Window resize
+            window.addEventListener('resize', () => {
+                drawMap();
+            });
+        }
+
+        let isDragging = false;
+        let lastMousePos = { x: 0, y: 0 };
+
+        function handleMouseDown(e) {
+            isDragging = true;
+            lastMousePos = { x: e.clientX, y: e.clientY };
+        }
+
+        function handleMouseMove(e) {
+            if (isDragging) {
+                const deltaX = e.clientX - lastMousePos.x;
+                const deltaY = e.clientY - lastMousePos.y;
+                
+                gameState.camera.x -= deltaX;
+                gameState.camera.y -= deltaY;
+                
+                lastMousePos = { x: e.clientX, y: e.clientY };
+                drawMap();
+            }
+        }
+
+        function handleMouseUp(e) {
+            isDragging = false;
+        }
+
+        // Touch handling for mobile
+        let lastTouchPos = null;
+        let touchStartTime = 0;
+
+        function handleTouchStart(e) {
+            e.preventDefault();
+            touchStartTime = Date.now();
+            
+            if (e.touches.length === 1) {
+                lastTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                isDragging = true;
+            }
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            
+            if (e.touches.length === 1 && isDragging && lastTouchPos) {
+                const deltaX = e.touches[0].clientX - lastTouchPos.x;
+                const deltaY = e.touches[0].clientY - lastTouchPos.y;
+                
+                gameState.camera.x -= deltaX;
+                gameState.camera.y -= deltaY;
+                
+                lastTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                drawMap();
+            }
+        }
+
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            const touchDuration = Date.now() - touchStartTime;
+            
+            if (touchDuration < 200 && e.changedTouches.length === 1) {
+                // Quick tap - treat as click
+                const touch = e.changedTouches[0];
+                handleCanvasClick({ clientX: touch.clientX, clientY: touch.clientY });
+            }
+            
+            isDragging = false;
+            lastTouchPos = null;
+        }
+
+        function handleCanvasClick(e) {
+            if (isDragging) return;
+            
+            const rect = e.target.getBoundingClientRect();
+            const pixelX = e.clientX - rect.left + gameState.camera.x;
+            const pixelY = e.clientY - rect.top + gameState.camera.y;
+            
+            const hexCoords = pixelToHex(pixelX - HEX_SIZE, pixelY - HEX_SIZE);
+            const x = hexCoords.col;
+            const y = hexCoords.row;
+            
+            const tile = getTile(x, y);
+            if (!tile) return;
+            
+            if (tile.unit && tile.unit.owner === gameState.currentPlayer && (tile.visible || !gameState.fogOfWar)) {
+                selectUnit(tile.unit);
+            } else if (gameState.selectedUnit && (tile.visible || !gameState.fogOfWar)) {
+                moveUnit(gameState.selectedUnit, x, y);
+            } else {
+                gameState.selectedUnit = null;
+                gameState.selectedCity = null;
+            }
+            
+            updateUI();
+            drawMap();
+        }
+
+        function selectUnit(unit) {
+            gameState.selectedUnit = unit;
+            gameState.selectedCity = null;
+            showNotification(`Selected ${unit.type.name}`);
+        }
+
+        function moveUnit(unit, targetX, targetY) {
+            if (unit.movement <= 0) return false;
+            if (unit.owner !== gameState.currentPlayer) return false;
+            
+            const targetTile = getTile(targetX, targetY);
+            if (!targetTile || (!targetTile.visible && gameState.fogOfWar)) return false;
+            
+            // Check if tile is blocked
+            if (targetTile.unit && targetTile.unit !== unit) return false;
+            if (targetTile.terrain.movement === Infinity) return false;
+            
+            // Calculate distance and movement cost
+            const distance = getHexDistance(unit.x, unit.y, targetX, targetY);
+            const movementCost = targetTile.terrain.movement * distance;
+            
+            if (movementCost > unit.movement) return false;
+            
+            // Move unit
+            const oldTile = getTile(unit.x, unit.y);
+            if (oldTile) oldTile.unit = null;
+            
+            unit.x = targetX;
+            unit.y = targetY;
+            unit.movement -= movementCost;
+            
+            targetTile.unit = unit;
+            
+            updateFogOfWar();
+            updateUI();
+            drawMap();
+            
+            return true;
+        }
+
+        function getHexDistance(x1, y1, x2, y2) {
+            return (Math.abs(x1 - x2) + Math.abs(x1 + y1 - x2 - y2) + Math.abs(y1 - y2)) / 2;
+        }
+
+        function endTurn() {
+            // Reset movement for current player's units
+            gameState.units
+                .filter(unit => unit.owner === gameState.currentPlayer)
+                .forEach(unit => {
+                    unit.movement = unit.maxMovement;
+                    unit.skipTurn = false;
+                });
+            
+            // Switch to next player
+            gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
+            
+            // If back to player 0, increment turn
+            if (gameState.currentPlayer === 0) {
+                gameState.turn++;
+            }
+            
+            updateFogOfWar();
+            updateUI();
+            drawMap();
+            
+            // AI turn processing
+            if (!gameState.players[gameState.currentPlayer].isHuman) {
+                setTimeout(processAITurn, 500);
+            }
+        }
+
+        function processAITurn() {
+            const aiUnits = gameState.units.filter(unit => unit.owner === gameState.currentPlayer);
+            
+            // Simple AI: move units towards unexplored areas
+            aiUnits.forEach(unit => {
+                // Find nearest unexplored land tile
+                let nearestUnexplored = null;
+                let minDistance = Infinity;
+                
+                for (let i = 0; i < 50; i++) {
+                    const randomTile = gameState.map[Math.floor(Math.random() * gameState.map.length)];
+                    if (!randomTile.explored && randomTile.terrain !== TERRAIN.OCEAN && randomTile.terrain !== TERRAIN.MOUNTAIN) {
+                        const distance = getHexDistance(unit.x, unit.y, randomTile.x, randomTile.y);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            nearestUnexplored = randomTile;
+                        }
+                    }
+                }
+                
+                if (nearestUnexplored) {
+                    // Move towards unexplored area
+                    const direction = {
+                        x: Math.sign(nearestUnexplored.x - unit.x),
+                        y: Math.sign(nearestUnexplored.y - unit.y)
+                    };
+                    
+                    const newX = unit.x + direction.x;
+                    const newY = unit.y + direction.y;
+                    
+                    moveUnit(unit, newX, newY);
+                } else {
+                    // Random exploration if no specific target
+                    const directions = getHexNeighbors(unit.x, unit.y);
+                    const validDirections = directions.filter(pos => {
+                        const tile = getTile(pos.x, pos.y);
+                        return tile && !tile.unit && tile.terrain !== TERRAIN.OCEAN && tile.terrain !== TERRAIN.MOUNTAIN;
+                    });
+                    
+                    if (validDirections.length > 0) {
+                        const randomDirection = validDirections[Math.floor(Math.random() * validDirections.length)];
+                        moveUnit(unit, randomDirection.x, randomDirection.y);
+                    }
+                }
+            });
+            
+            // End AI turn
+            setTimeout(endTurn, 1000);
+        }
+
+        function updateUI() {
+            // Update resource displays
+            document.getElementById('gold-display').textContent = gameState.resources.gold;
+            document.getElementById('science-display').textContent = gameState.resources.science;
+            document.getElementById('culture-display').textContent = gameState.resources.culture;
+            document.getElementById('production-display').textContent = gameState.resources.production;
+            document.getElementById('food-display').textContent = gameState.resources.food;
+            
+            // Update turn display
+            document.getElementById('turn-display').textContent = `Turn ${gameState.turn}`;
+            
+            // Update unit panel
+            const unitPanel = document.getElementById('unit-panel');
+            if (gameState.selectedUnit) {
+                unitPanel.style.display = 'block';
+                document.getElementById('unit-type').textContent = gameState.selectedUnit.type.name;
+                document.getElementById('unit-health').textContent = gameState.selectedUnit.health + '/100';
+                document.getElementById('unit-strength').textContent = gameState.selectedUnit.type.strength || 0;
+                document.getElementById('unit-movement').textContent = gameState.selectedUnit.movement + '/' + gameState.selectedUnit.maxMovement;
+            } else {
+                unitPanel.style.display = 'none';
+            }
+        }
+
+        function showNotification(message) {
+            const container = document.getElementById('notification-container');
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            
+            container.appendChild(notification);
+            
+            // Remove notification after 3 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
+        }
+
+        // Game initialization
+        function initGame() {
+            console.log('Initializing Strategy World...');
+            
+            generateWorldMap();
+            setupPlayers();
+            spawnInitialUnits();
+            setupEventListeners();
+            updateUI();
+            drawMap();
+            
+            // Hide loading screen
+            setTimeout(() => {
+                document.getElementById('loading-screen').style.display = 'none';
+                showNotification('Welcome to Strategy World! Explore and conquer the globe!');
+            }, 2000);
+            
+            console.log('Game initialized successfully');
+        }
+
+        // Start the game when page loads
+        window.addEventListener('load', initGame);
+    </script>
+</body>
+</html>
