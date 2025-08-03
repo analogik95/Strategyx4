@@ -649,169 +649,362 @@
             WORKER: { name: 'Worker', icon: '👷', strength: 0, movement: 2, cost: 70, type: 'civilian' },
             SPEARMAN: { name: 'Spearman', icon: '🔱', strength: 11, movement: 2, cost: 56, type: 'melee' },
             HORSEMAN: { name: 'Horseman', icon: '🐎', strength: 12, movement: 4, cost: 75, type: 'mounted' },
-            SWORDSMAN: { name: 'Swordsman', icon: '🗡️', strength: 14, move- **Great General**: Combat bonuses, citadel construction
-- **Great Admiral**: Naval combat bonuses, exploration benefits
+            SWORDSMAN: { name: 'Swordsman', icon: '🗡️', strength: 14, movement: 2, cost: 60, type: 'melee' }
+        };
 
-#### Generation Mechanics
-- **Great Person Points**: Accumulated through specialists and buildings
-- **Thresholds**: Increasing costs for subsequent great people
-- **Golden Ages**: Triggered by great artists or accumulated happiness
+        // Game state
+        let gameState = {
+            turn: 1,
+            currentPlayer: 0,
+            players: [],
+            map: [],
+            units: [],
+            cities: [],
+            selectedUnit: null,
+            selectedCity: null,
+            camera: { x: 0, y: 0, zoom: 1 },
+            resources: { gold: 100, science: 0, culture: 0, production: 0, food: 0 }
+        };
 
-### Religion System (Gods & Kings Expansion)
+        // Game initialization
+        function initGame() {
+            console.log('Initializing game...');
+            
+            // Hide loading screen after initialization
+            setTimeout(() => {
+                document.getElementById('loading-screen').style.display = 'none';
+            }, 2000);
+            
+            generateMap();
+            setupPlayers();
+            spawnInitialUnits();
+            setupEventListeners();
+            updateUI();
+            
+            console.log('Game initialized successfully');
+        }
 
-#### Faith Generation
-- **Sources**: Shrines, temples, natural wonders, beliefs
-- **Pantheons**: Early faith bonuses available to all civilizations
-- **Prophet Generation**: Faith accumulation creates great prophets
+        function generateMap() {
+            gameState.map = [];
+            for (let y = 0; y < MAP_HEIGHT; y++) {
+                for (let x = 0; x < MAP_WIDTH; x++) {
+                    const tile = {
+                        x: x,
+                        y: y,
+                        terrain: getRandomTerrain(x, y),
+                        unit: null,
+                        city: null,
+                        visible: true
+                    };
+                    gameState.map.push(tile);
+                }
+            }
+            drawMap();
+        }
 
-#### Religion Founding
-- **Founding**: Great prophets establish religions with custom names
-- **Beliefs**: Founder, follower, enhancer, and reformation beliefs
-- **Spreading**: Missionaries, trade routes, natural pressure
-- **Religious Pressure**: Conversion mechanics between cities
+        function getRandomTerrain(x, y) {
+            // Simple terrain generation
+            const edge = Math.min(x, y, MAP_WIDTH - x - 1, MAP_HEIGHT - y - 1);
+            const center = Math.sqrt((x - MAP_WIDTH/2) ** 2 + (y - MAP_HEIGHT/2) ** 2);
+            
+            if (edge < 3) return TERRAIN.OCEAN;
+            if (edge < 5) return TERRAIN.COAST;
+            
+            const rand = Math.random();
+            if (rand < 0.3) return TERRAIN.GRASSLAND;
+            if (rand < 0.5) return TERRAIN.PLAINS;
+            if (rand < 0.65) return TERRAIN.FOREST;
+            if (rand < 0.8) return TERRAIN.HILL;
+            if (rand < 0.9) return TERRAIN.DESERT;
+            if (rand < 0.95) return TERRAIN.TUNDRA;
+            return TERRAIN.MOUNTAIN;
+        }
 
-### Trade and Economics
+        function setupPlayers() {
+            gameState.players = [
+                { id: 0, name: 'Player', color: '#FF0000', isHuman: true },
+                { id: 1, name: 'AI 1', color: '#0000FF', isHuman: false },
+                { id: 2, name: 'AI 2', color: '#00FF00', isHuman: false },
+                { id: 3, name: 'AI 3', color: '#FFFF00', isHuman: false }
+            ];
+        }
 
-#### Gold Generation
-- **Sources**: Trade routes, buildings, tiles, city connections
-- **Expenses**: Unit maintenance, building maintenance, research agreements
-- **Purchasing**: Units, buildings, tiles with gold
+        function spawnInitialUnits() {
+            // Spawn starting units for each player
+            gameState.players.forEach((player, index) => {
+                const startX = 10 + index * 10;
+                const startY = 10 + index * 5;
+                
+                // Spawn settler
+                spawnUnit(UNIT_TYPES.SETTLER, startX, startY, player.id);
+                
+                // Spawn warrior
+                spawnUnit(UNIT_TYPES.WARRIOR, startX + 1, startY, player.id);
+            });
+        }
 
-#### Trade Routes
-- **Types**: Land (caravans) and sea (cargo ships)
-- **Benefits**: Gold, science, religious pressure, cultural influence
-- **Range**: Limited by technology and infrastructure
-- **Protection**: Vulnerable to barbarians and enemy civilizations
+        function spawnUnit(unitType, x, y, playerId) {
+            const unit = {
+                id: gameState.units.length,
+                type: unitType,
+                x: x,
+                y: y,
+                owner: playerId,
+                health: 100,
+                movement: unitType.movement,
+                maxMovement: unitType.movement,
+                fortified: false,
+                skipTurn: false
+            };
+            
+            gameState.units.push(unit);
+            const tile = getTile(x, y);
+            if (tile) tile.unit = unit;
+            
+            return unit;
+        }
 
-### Diplomacy System
+        function getTile(x, y) {
+            if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return null;
+            return gameState.map[y * MAP_WIDTH + x];
+        }
 
-#### Diplomatic Actions
-- **Trade Deals**: Resources, gold, research agreements, open borders
-- **Declarations**: War, peace, friendship, denouncement
-- **World Congress**: Late-game diplomatic voting system
-- **Espionage**: Spies for intelligence, stealing, election rigging
+        function drawMap() {
+            const canvas = document.getElementById('map-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = MAP_WIDTH * HEX_SIZE;
+            canvas.height = MAP_HEIGHT * HEX_SIZE;
+            
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw tiles
+            gameState.map.forEach(tile => {
+                drawTile(ctx, tile);
+            });
+            
+            // Draw units
+            gameState.units.forEach(unit => {
+                drawUnit(ctx, unit);
+            });
+        }
 
-#### AI Personality Traits
-- **Flavors**: Military, growth, science, culture, religion, naval, etc.
-- **Historical Agendas**: Unique diplomatic preferences per civilization
-- **Relationship Factors**: Trade, borders, religion, ideology, warmonger
+        function drawTile(ctx, tile) {
+            const x = tile.x * HEX_SIZE;
+            const y = tile.y * HEX_SIZE;
+            
+            ctx.fillStyle = tile.terrain.color;
+            ctx.fillRect(x, y, HEX_SIZE, HEX_SIZE);
+            
+            // Draw border
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, HEX_SIZE, HEX_SIZE);
+        }
 
-## User Interface Design
+        function drawUnit(ctx, unit) {
+            const x = unit.x * HEX_SIZE + HEX_SIZE/2;
+            const y = unit.y * HEX_SIZE + HEX_SIZE/2;
+            
+            // Draw unit background
+            ctx.fillStyle = gameState.players[unit.owner].color;
+            ctx.beginPath();
+            ctx.arc(x, y, HEX_SIZE/3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw unit icon
+            ctx.fillStyle = '#FFF';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(unit.type.icon, x, y);
+            
+            // Draw selection indicator
+            if (gameState.selectedUnit === unit) {
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, HEX_SIZE/3 + 5, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
 
-### Strategic View
-- **World Map**: Hexagonal grid with strategic resource overlay
-- **Mini-Map**: Overview with civilization territories and units
-- **Turn Counter**: Current turn and estimated end date
-- **Yield Icons**: Clear display of food, production, gold, science, culture
+        function setupEventListeners() {
+            const canvas = document.getElementById('map-canvas');
+            
+            canvas.addEventListener('click', handleCanvasClick);
+            canvas.addEventListener('contextmenu', handleCanvasRightClick);
+            
+            document.getElementById('end-turn-btn').addEventListener('click', endTurn);
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    endTurn();
+                }
+            });
+        }
 
-### City Management Interface
-- **City Screen**: Population, buildings, specialists, production queue
-- **Citizen Management**: Manual tile assignment and specialist allocation
-- **Purchase Options**: Gold and faith purchasing interfaces
-- **Growth Indicators**: Food surplus, production output, research generation
+        function handleCanvasClick(e) {
+            const rect = e.target.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / HEX_SIZE);
+            const y = Math.floor((e.clientY - rect.top) / HEX_SIZE);
+            
+            const tile = getTile(x, y);
+            if (!tile) return;
+            
+            if (tile.unit && tile.unit.owner === gameState.currentPlayer) {
+                selectUnit(tile.unit);
+            } else if (tile.city && tile.city.owner === gameState.currentPlayer) {
+                selectCity(tile.city);
+            } else {
+                gameState.selectedUnit = null;
+                gameState.selectedCity = null;
+            }
+            
+            updateUI();
+            drawMap();
+        }
 
-### Technology Tree
-- **Visual Layout**: Clear prerequisite lines and era organization
-- **Research Queue**: Ability to queue multiple technologies
-- **Cost Display**: Research points required and turns to completion
-- **Historical Context**: Quotes and descriptions for each technology
+        function handleCanvasRightClick(e) {
+            e.preventDefault();
+            
+            if (!gameState.selectedUnit) return;
+            
+            const rect = e.target.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / HEX_SIZE);
+            const y = Math.floor((e.clientY - rect.top) / HEX_SIZE);
+            
+            moveUnit(gameState.selectedUnit, x, y);
+        }
 
-### Combat Interface
-- **Unit Selection**: Health, movement, promotions clearly displayed
-- **Combat Preview**: Damage estimates before committing to attack
-- **Terrain Information**: Movement costs and defensive bonuses
-- **Range Indicators**: Attack and movement range visualization
+        function selectUnit(unit) {
+            gameState.selectedUnit = unit;
+            gameState.selectedCity = null;
+        }
 
-## Technical Specifications
+        function selectCity(city) {
+            gameState.selectedCity = city;
+            gameState.selectedUnit = null;
+        }
 
-### Engine and Platform
-- **Engine**: Custom DirectX-based engine
-- **Platforms**: Windows, Mac OS X, Linux (SteamOS)
-- **Minimum Requirements**: 2GB RAM, DirectX 9 graphics, 8GB storage
-- **Recommended**: 4GB RAM, DirectX 11 graphics, dedicated GPU
+        function moveUnit(unit, targetX, targetY) {
+            if (unit.movement <= 0) return false;
+            if (unit.owner !== gameState.currentPlayer) return false;
+            
+            const targetTile = getTile(targetX, targetY);
+            if (!targetTile) return false;
+            
+            // Check if tile is blocked
+            if (targetTile.unit && targetTile.unit !== unit) return false;
+            if (targetTile.terrain.movement === Infinity) return false;
+            
+            // Calculate movement cost
+            const distance = Math.abs(targetX - unit.x) + Math.abs(targetY - unit.y);
+            const movementCost = targetTile.terrain.movement * distance;
+            
+            if (movementCost > unit.movement) return false;
+            
+            // Move unit
+            const oldTile = getTile(unit.x, unit.y);
+            if (oldTile) oldTile.unit = null;
+            
+            unit.x = targetX;
+            unit.y = targetY;
+            unit.movement -= movementCost;
+            
+            targetTile.unit = unit;
+            
+            updateUI();
+            drawMap();
+            
+            return true;
+        }
 
-### Performance Targets
-- **Turn Processing**: Sub-5 second AI turns on standard maps
-- **Memory Usage**: 2GB maximum for large maps
-- **Loading Times**: Under 60 seconds for saved games
-- **Frame Rate**: 30+ FPS during normal gameplay
+        function endTurn() {
+            // Reset movement for current player's units
+            gameState.units
+                .filter(unit => unit.owner === gameState.currentPlayer)
+                .forEach(unit => {
+                    unit.movement = unit.maxMovement;
+                    unit.skipTurn = false;
+                });
+            
+            // Switch to next player
+            gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
+            
+            // If back to player 0, increment turn
+            if (gameState.currentPlayer === 0) {
+                gameState.turn++;
+            }
+            
+            // AI turn processing
+            if (!gameState.players[gameState.currentPlayer].isHuman) {
+                setTimeout(processAITurn, 500);
+            }
+            
+            updateUI();
+            drawMap();
+        }
 
-### Multiplayer Architecture
-- **Simultaneous Turns**: All players move at once with smart conflict resolution
-- **Turn Timers**: Configurable time limits for competitive play
-- **Hot Seat**: Local multiplayer support
-- **Pitboss**: Dedicated server option for persistent games
+        function processAITurn() {
+            const aiUnits = gameState.units.filter(unit => unit.owner === gameState.currentPlayer);
+            
+            // Simple AI: move units randomly
+            aiUnits.forEach(unit => {
+                const directions = [
+                    {x: 1, y: 0}, {x: -1, y: 0}, {x: 0, y: 1}, {x: 0, y: -1}
+                ];
+                
+                const direction = directions[Math.floor(Math.random() * directions.length)];
+                const newX = unit.x + direction.x;
+                const newY = unit.y + direction.y;
+                
+                moveUnit(unit, newX, newY);
+            });
+            
+            // End AI turn
+            setTimeout(endTurn, 1000);
+        }
 
-### Modding Support
-- **World Builder**: In-game map editor
-- **SDK**: Software development kit for advanced modding
-- **Lua Scripting**: Gameplay logic customization
-- **XML Databases**: Unit, building, and civilization modifications
-- **Asset Replacement**: Custom graphics, sounds, and music
+        function updateUI() {
+            // Update resource displays
+            document.getElementById('gold-display').textContent = gameState.resources.gold;
+            document.getElementById('science-display').textContent = gameState.resources.science;
+            document.getElementById('culture-display').textContent = gameState.resources.culture;
+            document.getElementById('production-display').textContent = gameState.resources.production;
+            document.getElementById('food-display').textContent = gameState.resources.food;
+            
+            // Update turn display
+            document.getElementById('turn-display').textContent = `Turn ${gameState.turn}`;
+            
+            // Update unit panel
+            const unitPanel = document.getElementById('unit-panel');
+            if (gameState.selectedUnit) {
+                unitPanel.style.display = 'block';
+                document.getElementById('unit-type').textContent = gameState.selectedUnit.type.name;
+                document.getElementById('unit-health').textContent = gameState.selectedUnit.health + '/100';
+                document.getElementById('unit-strength').textContent = gameState.selectedUnit.type.strength || 0;
+                document.getElementById('unit-movement').textContent = gameState.selectedUnit.movement + '/' + gameState.selectedUnit.maxMovement;
+            } else {
+                unitPanel.style.display = 'none';
+            }
+            
+            // Update city panel
+            const cityPanel = document.getElementById('city-panel');
+            if (gameState.selectedCity) {
+                cityPanel.style.display = 'block';
+                // City info would go here
+            } else {
+                cityPanel.style.display = 'none';
+            }
+        }
 
-## Content Specifications
-
-### Civilizations (Base Game)
-18 unique civilizations including America, Arabia, Aztec, China, Egypt, England, France, Germany, Greece, India, Iroquois, Japan, Ottoman, Persia, Rome, Russia, Siam, Songhai
-
-### Units (Base Game)
-- **Land Units**: 45+ unique unit types across all eras
-- **Naval Units**: 15+ ships from trireme to nuclear submarine  
-- **Air Units**: 8+ aircraft types from fighter to stealth bomber
-- **Civilian Units**: Workers, settlers, great people, missionaries
-
-### Buildings and Wonders
-- **Buildings**: 60+ regular buildings across all categories
-- **National Wonders**: 15+ unique buildings limited to one per civilization
-- **World Wonders**: 35+ famous historical monuments and structures
-- **Natural Wonders**: 12+ unique terrain features with special bonuses
-
-### Technologies
-81 technologies spanning from Agriculture to Future Tech, organized into 8 historical eras with realistic prerequisite relationships.
-
-## Expansion Content Strategy
-
-### Gods & Kings Expansion
-- **Religion System**: Faith, pantheons, beliefs, religious units
-- **Espionage System**: Spies, covert operations, election manipulation
-- **Enhanced Combat**: New naval combat mechanics and units
-- **New Civilizations**: 9 additional civilizations and leaders
-
-### Brave New World Expansion
-- **Trade Routes**: Comprehensive trade system with land and sea routes
-- **World Congress**: United Nations-style diplomatic voting
-- **Cultural Victory Rework**: Tourism and cultural influence mechanics
-- **Ideologies**: Late-game social policy trees with global effects
-- **New Civilizations**: 9 more civilizations focusing on cultural and trade gameplay
-
-## Quality Assurance and Testing
-
-### Testing Priorities
-- **Balance Testing**: Extensive multiplayer testing for competitive viability
-- **AI Testing**: Ensuring challenging but fair AI behavior across difficulties
-- **Performance Testing**: Optimization for various hardware configurations
-- **Compatibility Testing**: Platform-specific testing for Windows/Mac/Linux
-
-### Success Metrics
-- **Metacritic Score**: Target 85+ aggregate review score
-- **Sales Target**: 5+ million units in first year
-- **Community Engagement**: Active modding community and competitive scene
-- **Player Retention**: 100+ hour average playtime per player
-
-## Post-Launch Support
-
-### Patch Schedule
-- **Day 1 Patch**: Critical bug fixes and balance adjustments
-- **Monthly Updates**: Regular balance patches and bug fixes
-- **Major Updates**: Quarterly content updates with new features
-- **Long-term Support**: 2+ years of continued development
-
-### Community Features
-- **Steam Workshop**: Integrated mod sharing and installation
-- **Competitive Scene**: Official tournament support and ranking systems
-- **Developer Communication**: Regular developer blogs and community interaction
-- **Feedback Integration**: Community-driven balance and feature improvements
-
----
-
-*This Game Design Document serves as the foundational blueprint for Civilization 5's development, ensuring all team members understand the vision, mechanics, and technical requirements necessary to create the definitive turn-based strategy experience.*
+        // Start the game when page loads
+        window.addEventListener('load', initGame);
+    </script>
+</body>
+</html>
