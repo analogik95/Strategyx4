@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Civilization 5 - Web Edition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #game-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        #main-view {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #map-canvas {
+            position: absolute;
+            cursor: grab;
+            image-rendering: crisp-edges;
+        }
+
+        #map-canvas:active {
+            cursor: grabbing;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+
+        /* Top Bar UI */
+        #top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.7));
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            pointer-events: all;
+            border-bottom: 2px solid #444;
+        }
+
+        .resource-display {
+            display: flex;
+            gap: 30px;
+            flex: 1;
+        }
+
+        .resource-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .resource-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .gold { background: #FFD700; color: #000; }
+        .science { background: #4169E1; }
+        .culture { background: #8B008B; }
+        .production { background: #8B4513; }
+        .food { background: #228B22; }
+
+        #turn-display {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        #end-turn-btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: #000;
+            border: none;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(255,215,0,0.3);
+        }
+
+        #end-turn-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(255,215,0,0.5);
+        }
+
+        #end-turn-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* Side Panel */
+        #side-panel {
+            width: 350px;
+            background: linear-gradient(to right, rgba(0,0,0,0.95), rgba(0,0,0,0.9));
+            border-left: 2px solid #444;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel-section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .panel-header {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #FFD700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Unit Info */
+        .unit-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .unit-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .unit-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 8px;
+            background: linear-gradient(135deg, #4169E1, #1E90FF);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .action-btn:hover {
+            background: linear-gradient(135deg, #1E90FF, #00BFFF);
+            transform: translateY(-2px);
+        }
+
+        .action-btn:disabled {
+            background: #444;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* City Info */
+        .city-buildings {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .building-item {
+            background: rgba(255,255,255,0.05);
+            padding: 8px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .build-btn {
+            padding: 4px 12px;
+            background: #228B22;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .build-btn:hover {
+            background: #32CD32;
+        }
+
+        /* Tech Tree */
+        #tech-tree {
+            display: none;
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            right: 370px;
+            bottom: 20px;
+            background: rgba(0,0,0,0.95);
+            border: 2px solid #444;
+            border-radius: 10px;
+            padding: 20px;
+            overflow: auto;
+            z-index: 100;
+        }
+
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            min-width: 800px;
+        }
+
+        .tech-item {
+            background: linear-gradient(135deg, rgba(65,105,225,0.2), rgba(30,144,255,0.2));
+            border: 2px solid #4169E1;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .tech-item:hover {
+            background: linear-gradient(135deg, rgba(65,105,225,0.4), rgba(30,144,255,0.4));
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(65,105,225,0.5);
+        }
+
+        .tech-item.researched {
+            background: linear-gradient(135deg, rgba(0,128,0,0.3), rgba(34,139,34,0.3));
+            border-color: #228B22;
+        }
+
+        .tech-item.available {
+            border-color: #FFD700;
+            box-shadow: 0 0 10px rgba(255,215,0,0.3);
+        }
+
+        .tech-name {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .tech-cost {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .tech-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: rgba(255,215,0,0.3);
+            border-radius: 0 0 6px 6px;
+            overflow: hidden;
+        }
+
+        .tech-progress-bar {
+            height: 100%;
+            background: #FFD700;
+            transition: width 0.3s;
+        }
+
+        /* Victory Screen */
+        #victory-screen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .victory-content {
+            background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+            border: 3px solid #FFD700;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            box-shadow: 0 0 50px rgba(255,215,0,0.5);
+        }
+
+        .victory-title {
+            font-size: 48px;
+            color: #FFD700;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+
+        .victory-message {
+            font-size: 20px;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .restart-btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: #000;
+            border: none;
+            border-radius: 30px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .restart-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 10px 30px rgba(255,215,0,0.5);
+        }
+
+        /* Mini Map */
+        #mini-map {
+            position: absolute;
+            bottom: 20px;
+            right: 390px;
+            width: 200px;
+            height: 150px;
+            background: rgba(0,0,0,0.8);
+            border: 2px solid #444;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #mini-map-canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+        }
+
+        /* Combat Preview */
+        .combat-preview {
+            position: absolute;
+            background: rgba(0,0,0,0.9);
+            border: 2px solid #FFD700;
+            border-radius: 10px;
+            padding: 15px;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .combat-odds {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 10px;
+        }
+
+        .combat-unit {
+            text-align: center;
+        }
+
+        .combat-strength {
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        .combat-damage {
+            font-size: 14px;
+            color: #ff4444;
+        }
+
+        /* Notifications */
+        #notification-container {
+            position: absolute;
+            top: 80px;
+            right: 390px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .notification {
+            background: rgba(0,0,0,0.9);
+            border: 2px solid #FFD700;
+            border-radius: 10px;
+            padding: 15px 20px;
+            animation: slideIn 0.5s ease-out;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Loading Screen */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .loading-content {
+            text-align: center;
+        }
+
+        .loading-title {
+            font-size: 48px;
+            color: #FFD700;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+        }
+
+        .loading-bar {
+            width: 400px;
+            height: 30px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid #444;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+
+        .loading-progress {
+            height: 100%;
+            background: linear-gradient(90deg, #FFD700, #FFA500);
+            transition: width 0.3s;
+            box-shadow: 0 0 20px rgba(255,215,0,0.5);
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-title">Civilization V</div>
+            <div class="loading-bar">
+                <div class="loading-progress" style="width: 0%"></div>
+            </div>
+            <div class="loading-text">Generating World...</div>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <div id="main-view">
+            <canvas id="map-canvas"></canvas>
+            
+            <div id="ui-overlay">
+                <div id="top-bar">
+                    <div class="resource-display">
+                        <div class="resource-item">
+                            <div class="resource-icon gold">💰</div>
+                            <span id="gold-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon science">🔬</div>
+                            <span id="science-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon culture">🎭</div>
+                            <span id="culture-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon production">⚒️</div>
+                            <span id="production-display">0</span>
+                        </div>
+                        <div class="resource-item">
+                            <div class="resource-icon food">🌾</div>
+                            <span id="food-display">0</span>
+                        </div>
+                    </div>
+                    <div id="turn-display">Turn 1</div>
+                    <button id="end-turn-btn">End Turn</button>
+                </div>
+
+                <div id="mini-map">
+                    <canvas id="mini-map-canvas"></canvas>
+                </div>
+
+                <div id="notification-container"></div>
+            </div>
+
+            <div id="tech-tree">
+                <div class="panel-header">Technology Tree</div>
+                <div class="tech-grid" id="tech-grid"></div>
+            </div>
+        </div>
+
+        <div id="side-panel">
+            <div class="panel-section" id="unit-panel" style="display: none;">
+                <div class="panel-header">Unit Info</div>
+                <div class="unit-info">
+                    <div class="unit-stat">
+                        <span>Type:</span>
+                        <span id="unit-type">-</span>
+                    </div>
+                    <div class="unit-stat">
+                        <span>Health:</span>
+                        <span id="unit-health">-</span>
+                    </div>
+                    <div class="unit-stat">
+                        <span>Strength:</span>
+                        <span id="unit-strength">-</span>
+                    </div>
+                    <div class="unit-stat">
+                        <span>Movement:</span>
+                        <span id="unit-movement">-</span>
+                    </div>
+                    <div class="unit-actions">
+                        <button class="action-btn" id="fortify-btn">Fortify</button>
+                        <button class="action-btn" id="skip-btn">Skip Turn</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section" id="city-panel" style="display: none;">
+                <div class="panel-header">City Info</div>
+                <div class="city-info">
+                    <div class="unit-stat">
+                        <span>Name:</span>
+                        <span id="city-name">-</span>
+                    </div>
+                    <div class="unit-stat">
+                        <span>Population:</span>
+                        <span id="city-population">-</span>
+                    </div>
+                    <div class="unit-stat">
+                        <span>Production:</span>
+                        <span id="city-production">-</span>
+                    </div>
+                    <div class="panel-header" style="margin-top: 15px;">Buildings</div>
+                    <div class="city-buildings" id="city-buildings"></div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-header">Controls</div>
+                <div style="font-size: 14px; line-height: 1.8;">
+                    <div>🖱️ Left Click - Select unit/city</div>
+                    <div>🖱️ Right Click - Move unit</div>
+                    <div>🖱️ Drag - Pan map</div>
+                    <div>⌨️ T - Technology tree</div>
+                    <div>⌨️ Space - End turn</div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-header">Victory Progress</div>
+                <div style="font-size: 14px; line-height: 1.8;">
+                    <div>🏛️ Control Capitals: <span id="capitals-controlled">1/4</span></div>
+                    <div>🔬 Technologies: <span id="tech-progress">0/20</span></div>
+                    <div>🎭 Culture Level: <span id="culture-level">0</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="victory-screen">
+        <div class="victory-content">
+            <div class="victory-title">Victory!</div>
+            <div class="victory-message" id="victory-message"></div>
+            <button class="restart-btn" onclick="location.reload()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // Game constants
+        const HEX_SIZE = 40;
+        const MAP_WIDTH = 50;
+        const MAP_HEIGHT = 30;
+        
+        // Terrain types
+        const TERRAIN = {
+            OCEAN: { name: 'Ocean', color: '#1a4d8f', movement: Infinity, yields: { food: 1, production: 0, gold: 1 } },
+            COAST: { name: 'Coast', color: '#2d6bb5', movement: 1, yields: { food: 1, production: 0, gold: 2 } },
+            PLAINS: { name: 'Plains', color: '#c4a574', movement: 1, yields: { food: 1, production: 1, gold: 0 } },
+            GRASSLAND: { name: 'Grassland', color: '#7cb342', movement: 1, yields: { food: 2, production: 0, gold: 0 } },
+            DESERT: { name: 'Desert', color: '#f4d03f', movement: 1, yields: { food: 0, production: 0, gold: 1 } },
+            TUNDRA: { name: 'Tundra', color: '#90a4ae', movement: 1, yields: { food: 1, production: 0, gold: 0 } },
+            HILL: { name: 'Hill', color: '#8d6e63', movement: 2, yields: { food: 0, production: 2, gold: 0 } },
+            MOUNTAIN: { name: 'Mountain', color: '#616161', movement: Infinity, yields: { food: 0, production: 0, gold: 0 } },
+            FOREST: { name: 'Forest', color: '#2e7d32', movement: 2, yields: { food: 1, production: 1, gold: 0 } }
+        };
+
+        // Unit types
+        const UNIT_TYPES = {
+            WARRIOR: { name: 'Warrior', icon: '⚔️', strength: 8, movement: 2, cost: 40, type: 'melee' },
+            ARCHER: { name: 'Archer', icon: '🏹', strength: 5, rangedStrength: 7, range: 2, movement: 2, cost: 40, type: 'ranged' },
+            SETTLER: { name: 'Settler', icon: '🏠', strength: 0, movement: 2, cost: 80, type: 'civilian' },
+            WORKER: { name: 'Worker', icon: '👷', strength: 0, movement: 2, cost: 70, type: 'civilian' },
+            SPEARMAN: { name: 'Spearman', icon: '🔱', strength: 11, movement: 2, cost: 56, type: 'melee' },
+            HORSEMAN: { name: 'Horseman', icon: '🐎', strength: 12, movement: 4, cost: 75, type: 'mounted' },
+            SWORDSMAN: { name: 'Swordsman', icon: '🗡️', strength: 14, move- **Great General**: Combat bonuses, citadel construction
+- **Great Admiral**: Naval combat bonuses, exploration benefits
+
+#### Generation Mechanics
+- **Great Person Points**: Accumulated through specialists and buildings
+- **Thresholds**: Increasing costs for subsequent great people
+- **Golden Ages**: Triggered by great artists or accumulated happiness
+
+### Religion System (Gods & Kings Expansion)
+
+#### Faith Generation
+- **Sources**: Shrines, temples, natural wonders, beliefs
+- **Pantheons**: Early faith bonuses available to all civilizations
+- **Prophet Generation**: Faith accumulation creates great prophets
+
+#### Religion Founding
+- **Founding**: Great prophets establish religions with custom names
+- **Beliefs**: Founder, follower, enhancer, and reformation beliefs
+- **Spreading**: Missionaries, trade routes, natural pressure
+- **Religious Pressure**: Conversion mechanics between cities
+
+### Trade and Economics
+
+#### Gold Generation
+- **Sources**: Trade routes, buildings, tiles, city connections
+- **Expenses**: Unit maintenance, building maintenance, research agreements
+- **Purchasing**: Units, buildings, tiles with gold
+
+#### Trade Routes
+- **Types**: Land (caravans) and sea (cargo ships)
+- **Benefits**: Gold, science, religious pressure, cultural influence
+- **Range**: Limited by technology and infrastructure
+- **Protection**: Vulnerable to barbarians and enemy civilizations
+
+### Diplomacy System
+
+#### Diplomatic Actions
+- **Trade Deals**: Resources, gold, research agreements, open borders
+- **Declarations**: War, peace, friendship, denouncement
+- **World Congress**: Late-game diplomatic voting system
+- **Espionage**: Spies for intelligence, stealing, election rigging
+
+#### AI Personality Traits
+- **Flavors**: Military, growth, science, culture, religion, naval, etc.
+- **Historical Agendas**: Unique diplomatic preferences per civilization
+- **Relationship Factors**: Trade, borders, religion, ideology, warmonger
+
+## User Interface Design
+
+### Strategic View
+- **World Map**: Hexagonal grid with strategic resource overlay
+- **Mini-Map**: Overview with civilization territories and units
+- **Turn Counter**: Current turn and estimated end date
+- **Yield Icons**: Clear display of food, production, gold, science, culture
+
+### City Management Interface
+- **City Screen**: Population, buildings, specialists, production queue
+- **Citizen Management**: Manual tile assignment and specialist allocation
+- **Purchase Options**: Gold and faith purchasing interfaces
+- **Growth Indicators**: Food surplus, production output, research generation
+
+### Technology Tree
+- **Visual Layout**: Clear prerequisite lines and era organization
+- **Research Queue**: Ability to queue multiple technologies
+- **Cost Display**: Research points required and turns to completion
+- **Historical Context**: Quotes and descriptions for each technology
+
+### Combat Interface
+- **Unit Selection**: Health, movement, promotions clearly displayed
+- **Combat Preview**: Damage estimates before committing to attack
+- **Terrain Information**: Movement costs and defensive bonuses
+- **Range Indicators**: Attack and movement range visualization
+
+## Technical Specifications
+
+### Engine and Platform
+- **Engine**: Custom DirectX-based engine
+- **Platforms**: Windows, Mac OS X, Linux (SteamOS)
+- **Minimum Requirements**: 2GB RAM, DirectX 9 graphics, 8GB storage
+- **Recommended**: 4GB RAM, DirectX 11 graphics, dedicated GPU
+
+### Performance Targets
+- **Turn Processing**: Sub-5 second AI turns on standard maps
+- **Memory Usage**: 2GB maximum for large maps
+- **Loading Times**: Under 60 seconds for saved games
+- **Frame Rate**: 30+ FPS during normal gameplay
+
+### Multiplayer Architecture
+- **Simultaneous Turns**: All players move at once with smart conflict resolution
+- **Turn Timers**: Configurable time limits for competitive play
+- **Hot Seat**: Local multiplayer support
+- **Pitboss**: Dedicated server option for persistent games
+
+### Modding Support
+- **World Builder**: In-game map editor
+- **SDK**: Software development kit for advanced modding
+- **Lua Scripting**: Gameplay logic customization
+- **XML Databases**: Unit, building, and civilization modifications
+- **Asset Replacement**: Custom graphics, sounds, and music
+
+## Content Specifications
+
+### Civilizations (Base Game)
+18 unique civilizations including America, Arabia, Aztec, China, Egypt, England, France, Germany, Greece, India, Iroquois, Japan, Ottoman, Persia, Rome, Russia, Siam, Songhai
+
+### Units (Base Game)
+- **Land Units**: 45+ unique unit types across all eras
+- **Naval Units**: 15+ ships from trireme to nuclear submarine  
+- **Air Units**: 8+ aircraft types from fighter to stealth bomber
+- **Civilian Units**: Workers, settlers, great people, missionaries
+
+### Buildings and Wonders
+- **Buildings**: 60+ regular buildings across all categories
+- **National Wonders**: 15+ unique buildings limited to one per civilization
+- **World Wonders**: 35+ famous historical monuments and structures
+- **Natural Wonders**: 12+ unique terrain features with special bonuses
+
+### Technologies
+81 technologies spanning from Agriculture to Future Tech, organized into 8 historical eras with realistic prerequisite relationships.
+
+## Expansion Content Strategy
+
+### Gods & Kings Expansion
+- **Religion System**: Faith, pantheons, beliefs, religious units
+- **Espionage System**: Spies, covert operations, election manipulation
+- **Enhanced Combat**: New naval combat mechanics and units
+- **New Civilizations**: 9 additional civilizations and leaders
+
+### Brave New World Expansion
+- **Trade Routes**: Comprehensive trade system with land and sea routes
+- **World Congress**: United Nations-style diplomatic voting
+- **Cultural Victory Rework**: Tourism and cultural influence mechanics
+- **Ideologies**: Late-game social policy trees with global effects
+- **New Civilizations**: 9 more civilizations focusing on cultural and trade gameplay
+
+## Quality Assurance and Testing
+
+### Testing Priorities
+- **Balance Testing**: Extensive multiplayer testing for competitive viability
+- **AI Testing**: Ensuring challenging but fair AI behavior across difficulties
+- **Performance Testing**: Optimization for various hardware configurations
+- **Compatibility Testing**: Platform-specific testing for Windows/Mac/Linux
+
+### Success Metrics
+- **Metacritic Score**: Target 85+ aggregate review score
+- **Sales Target**: 5+ million units in first year
+- **Community Engagement**: Active modding community and competitive scene
+- **Player Retention**: 100+ hour average playtime per player
+
+## Post-Launch Support
+
+### Patch Schedule
+- **Day 1 Patch**: Critical bug fixes and balance adjustments
+- **Monthly Updates**: Regular balance patches and bug fixes
+- **Major Updates**: Quarterly content updates with new features
+- **Long-term Support**: 2+ years of continued development
+
+### Community Features
+- **Steam Workshop**: Integrated mod sharing and installation
+- **Competitive Scene**: Official tournament support and ranking systems
+- **Developer Communication**: Regular developer blogs and community interaction
+- **Feedback Integration**: Community-driven balance and feature improvements
+
+---
+
+*This Game Design Document serves as the foundational blueprint for Civilization 5's development, ensuring all team members understand the vision, mechanics, and technical requirements necessary to create the definitive turn-based strategy experience.*
