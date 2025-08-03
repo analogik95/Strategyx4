@@ -624,9 +624,11 @@
 
     <script>
         // Game constants
-        const HEX_SIZE = 40;
-        const MAP_WIDTH = 50;
-        const MAP_HEIGHT = 30;
+        const HEX_SIZE = 35;
+        const HEX_WIDTH = HEX_SIZE * 2;
+        const HEX_HEIGHT = Math.sqrt(3) * HEX_SIZE;
+        const MAP_WIDTH = 40;
+        const MAP_HEIGHT = 25;
         
         // Terrain types
         const TERRAIN = {
@@ -652,7 +654,68 @@
             SWORDSMAN: { name: 'Swordsman', icon: '🗡️', strength: 14, movement: 2, cost: 60, type: 'melee' }
         };
 
-        // Game state
+        // Hex coordinate utilities
+        function hexToPixel(col, row) {
+            const x = HEX_SIZE * (3/2 * col);
+            const y = HEX_SIZE * (Math.sqrt(3)/2 * col + Math.sqrt(3) * row);
+            return { x, y };
+        }
+
+        function pixelToHex(x, y) {
+            const col = (2/3 * x) / HEX_SIZE;
+            const row = (-1/3 * x + Math.sqrt(3)/3 * y) / HEX_SIZE;
+            return hexRound(col, row);
+        }
+
+        function hexRound(col, row) {
+            const cube_x = col;
+            const cube_z = row;
+            const cube_y = -cube_x - cube_z;
+            
+            let rx = Math.round(cube_x);
+            let ry = Math.round(cube_y);
+            let rz = Math.round(cube_z);
+            
+            const x_diff = Math.abs(rx - cube_x);
+            const y_diff = Math.abs(ry - cube_y);
+            const z_diff = Math.abs(rz - cube_z);
+            
+            if (x_diff > y_diff && x_diff > z_diff) {
+                rx = -ry - rz;
+            } else if (y_diff > z_diff) {
+                ry = -rx - rz;
+            } else {
+                rz = -rx - ry;
+            }
+            
+            return { col: rx, row: rz };
+        }
+
+        function drawHexagon(ctx, x, y, size, fillStyle, strokeStyle = '#333') {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = Math.PI / 3 * i;
+                const px = x + size * Math.cos(angle);
+                const py = y + size * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            
+            if (fillStyle) {
+                ctx.fillStyle = fillStyle;
+                ctx.fill();
+            }
+            
+            if (strokeStyle) {
+                ctx.strokeStyle = strokeStyle;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
         let gameState = {
             turn: 1,
             currentPlayer: 0,
@@ -686,38 +749,156 @@
 
         function generateMap() {
             gameState.map = [];
-            for (let y = 0; y < MAP_HEIGHT; y++) {
-                for (let x = 0; x < MAP_WIDTH; x++) {
+            
+            // Initialize all tiles as ocean
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
                     const tile = {
-                        x: x,
-                        y: y,
-                        terrain: getRandomTerrain(x, y),
+                        x: col,
+                        y: row,
+                        terrain: TERRAIN.OCEAN,
                         unit: null,
                         city: null,
-                        visible: true
+                        visible: true,
+                        elevation: 0
                     };
                     gameState.map.push(tile);
                 }
             }
+            
+            // Generate continents and islands
+            generateContinentsAndIslands();
+            
             drawMap();
         }
 
-        function getRandomTerrain(x, y) {
-            // Simple terrain generation
-            const edge = Math.min(x, y, MAP_WIDTH - x - 1, MAP_HEIGHT - y - 1);
-            const center = Math.sqrt((x - MAP_WIDTH/2) ** 2 + (y - MAP_HEIGHT/2) ** 2);
+        function generateContinentsAndIslands() {
+            // Create 2-3 main continents
+            const continentSeeds = [
+                { x: Math.floor(MAP_WIDTH * 0.25), y: Math.floor(MAP_HEIGHT * 0.3), size: 80 },
+                { x: Math.floor(MAP_WIDTH * 0.75), y: Math.floor(MAP_HEIGHT * 0.7), size: 70 },
+                { x: Math.floor(MAP_WIDTH * 0.6), y: Math.floor(MAP_HEIGHT * 0.2), size: 60 }
+            ];
             
-            if (edge < 3) return TERRAIN.OCEAN;
-            if (edge < 5) return TERRAIN.COAST;
+            // Generate main continents
+            continentSeeds.forEach(seed => {
+                generateLandmass(seed.x, seed.y, seed.size, 'continent');
+            });
             
-            const rand = Math.random();
-            if (rand < 0.3) return TERRAIN.GRASSLAND;
-            if (rand < 0.5) return TERRAIN.PLAINS;
-            if (rand < 0.65) return TERRAIN.FOREST;
-            if (rand < 0.8) return TERRAIN.HILL;
-            if (rand < 0.9) return TERRAIN.DESERT;
-            if (rand < 0.95) return TERRAIN.TUNDRA;
-            return TERRAIN.MOUNTAIN;
+            // Generate scattered islands
+            for (let i = 0; i < 15; i++) {
+                const x = Math.floor(Math.random() * MAP_WIDTH);
+                const y = Math.floor(Math.random() * MAP_HEIGHT);
+                const size = 5 + Math.floor(Math.random() * 10);
+                
+                const tile = getTile(x, y);
+                if (tile && tile.terrain === TERRAIN.OCEAN) {
+                    generateLandmass(x, y, size, 'island');
+                }
+            }
+            
+            // Add coastal areas and refine terrain
+            addCoastalAreas();
+            addTerrainVariation();
+        }
+
+        function generateLandmass(startX, startY, maxSize, type) {
+            const landTiles = [];
+            const queue = [{ x: startX, y: startY, distance: 0 }];
+            const visited = new Set();
+            
+            while (queue.length > 0 && landTiles.length < maxSize) {
+                const current = queue.shift();
+                const key = `${current.x},${current.y}`;
+                
+                if (visited.has(key)) continue;
+                visited.add(key);
+                
+                const tile = getTile(current.x, current.y);
+                if (!tile) continue;
+                
+                // Probability of expansion decreases with distance
+                const expansionChance = Math.max(0.3, 1 - (current.distance / (maxSize * 0.3)));
+                if (Math.random() < expansionChance) {
+                    tile.terrain = TERRAIN.GRASSLAND;
+                    tile.elevation = 1 + Math.floor(Math.random() * 3);
+                    landTiles.push(tile);
+                    
+                    // Add neighbors to queue
+                    const neighbors = getHexNeighbors(current.x, current.y);
+                    neighbors.forEach(neighbor => {
+                        const neighborKey = `${neighbor.x},${neighbor.y}`;
+                        if (!visited.has(neighborKey)) {
+                            queue.push({ 
+                                x: neighbor.x, 
+                                y: neighbor.y, 
+                                distance: current.distance + 1 
+                            });
+                        }
+                    });
+                }
+            }
+        }
+
+        function getHexNeighbors(col, row) {
+            // Hex grid neighbors (using axial coordinates)
+            const directions = [
+                { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
+                { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 }
+            ];
+            
+            return directions
+                .map(dir => ({ x: col + dir.x, y: row + dir.y }))
+                .filter(pos => pos.x >= 0 && pos.x < MAP_WIDTH && pos.y >= 0 && pos.y < MAP_HEIGHT);
+        }
+
+        function addCoastalAreas() {
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
+                    const tile = getTile(col, row);
+                    if (!tile || tile.terrain !== TERRAIN.OCEAN) continue;
+                    
+                    // Check if adjacent to land
+                    const neighbors = getHexNeighbors(col, row);
+                    const hasLandNeighbor = neighbors.some(neighbor => {
+                        const neighborTile = getTile(neighbor.x, neighbor.y);
+                        return neighborTile && neighborTile.terrain !== TERRAIN.OCEAN;
+                    });
+                    
+                    if (hasLandNeighbor && Math.random() < 0.7) {
+                        tile.terrain = TERRAIN.COAST;
+                        tile.elevation = 0;
+                    }
+                }
+            }
+        }
+
+        function addTerrainVariation() {
+            for (let row = 0; row < MAP_HEIGHT; row++) {
+                for (let col = 0; col < MAP_WIDTH; col++) {
+                    const tile = getTile(col, row);
+                    if (!tile || tile.terrain === TERRAIN.OCEAN || tile.terrain === TERRAIN.COAST) continue;
+                    
+                    const rand = Math.random();
+                    const elevation = tile.elevation || 1;
+                    
+                    if (elevation >= 3 && rand < 0.3) {
+                        tile.terrain = TERRAIN.MOUNTAIN;
+                    } else if (elevation >= 2 && rand < 0.4) {
+                        tile.terrain = TERRAIN.HILL;
+                    } else if (rand < 0.3) {
+                        tile.terrain = TERRAIN.FOREST;
+                    } else if (rand < 0.5) {
+                        tile.terrain = TERRAIN.PLAINS;
+                    } else if (rand < 0.65) {
+                        tile.terrain = TERRAIN.GRASSLAND;
+                    } else if (rand < 0.8) {
+                        tile.terrain = TERRAIN.DESERT;
+                    } else {
+                        tile.terrain = TERRAIN.TUNDRA;
+                    }
+                }
+            }
         }
 
         function setupPlayers() {
@@ -773,8 +954,9 @@
             const canvas = document.getElementById('map-canvas');
             const ctx = canvas.getContext('2d');
             
-            canvas.width = MAP_WIDTH * HEX_SIZE;
-            canvas.height = MAP_HEIGHT * HEX_SIZE;
+            // Calculate canvas size for hex grid
+            canvas.width = MAP_WIDTH * HEX_SIZE * 1.5 + HEX_SIZE;
+            canvas.height = MAP_HEIGHT * HEX_HEIGHT + HEX_HEIGHT/2;
             
             // Clear canvas
             ctx.fillStyle = '#000';
@@ -782,7 +964,7 @@
             
             // Draw tiles
             gameState.map.forEach(tile => {
-                drawTile(ctx, tile);
+                drawHexTile(ctx, tile);
             });
             
             // Draw units
@@ -791,43 +973,257 @@
             });
         }
 
-        function drawTile(ctx, tile) {
-            const x = tile.x * HEX_SIZE;
-            const y = tile.y * HEX_SIZE;
+        function drawHexTile(ctx, tile) {
+            const pixelPos = hexToPixel(tile.x, tile.y);
+            const x = pixelPos.x + HEX_SIZE;
+            const y = pixelPos.y + HEX_SIZE;
             
-            ctx.fillStyle = tile.terrain.color;
-            ctx.fillRect(x, y, HEX_SIZE, HEX_SIZE);
+            // Create gradient based on terrain and elevation
+            const gradient = createTerrainGradient(ctx, x, y, tile);
             
-            // Draw border
-            ctx.strokeStyle = '#333';
+            // Draw main hexagon
+            drawHexagon(ctx, x, y, HEX_SIZE * 0.9, gradient, '#2a2a2a');
+            
+            // Add elevation shading for 3D effect
+            if (tile.elevation && tile.elevation > 0) {
+                const shadowOffset = tile.elevation * 2;
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.shadowBlur = 3;
+                ctx.shadowOffsetX = shadowOffset;
+                ctx.shadowOffsetY = shadowOffset;
+                
+                // Highlight for height
+                const highlightGradient = ctx.createRadialGradient(
+                    x - HEX_SIZE/4, y - HEX_SIZE/4, 0,
+                    x, y, HEX_SIZE
+                );
+                highlightGradient.addColorStop(0, 'rgba(255,255,255,0.2)');
+                highlightGradient.addColorStop(1, 'rgba(255,255,255,0)');
+                
+                drawHexagon(ctx, x, y, HEX_SIZE * 0.9, highlightGradient);
+                
+                // Reset shadow
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+            }
+            
+            // Add terrain texture patterns
+            addTerrainTexture(ctx, x, y, tile);
+        }
+
+        function createTerrainGradient(ctx, x, y, tile) {
+            const gradient = ctx.createRadialGradient(
+                x - HEX_SIZE/3, y - HEX_SIZE/3, 0,
+                x + HEX_SIZE/3, y + HEX_SIZE/3, HEX_SIZE
+            );
+            
+            const baseColor = tile.terrain.color;
+            const lightColor = lightenColor(baseColor, 30);
+            const darkColor = darkenColor(baseColor, 20);
+            
+            gradient.addColorStop(0, lightColor);
+            gradient.addColorStop(0.6, baseColor);
+            gradient.addColorStop(1, darkColor);
+            
+            return gradient;
+        }
+
+        function lightenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = ((num >> 8) & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+        }
+
+        function darkenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) - amt;
+            const G = ((num >> 8) & 0x00FF) - amt;
+            const B = (num & 0x0000FF) - amt;
+            return '#' + (0x1000000 + (R > 255 ? 255 : R < 0 ? 0 : R) * 0x10000 +
+                (G > 255 ? 255 : G < 0 ? 0 : G) * 0x100 +
+                (B > 255 ? 255 : B < 0 ? 0 : B)).toString(16).slice(1);
+        }
+
+        function addTerrainTexture(ctx, x, y, tile) {
+            ctx.save();
+            
+            // Create clipping path for hexagon
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = Math.PI / 3 * i;
+                const px = x + (HEX_SIZE * 0.9) * Math.cos(angle);
+                const py = y + (HEX_SIZE * 0.9) * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            ctx.clip();
+            
+            // Add texture based on terrain type
+            switch (tile.terrain) {
+                case TERRAIN.FOREST:
+                    drawForestTexture(ctx, x, y);
+                    break;
+                case TERRAIN.MOUNTAIN:
+                    drawMountainTexture(ctx, x, y);
+                    break;
+                case TERRAIN.DESERT:
+                    drawDesertTexture(ctx, x, y);
+                    break;
+                case TERRAIN.OCEAN:
+                case TERRAIN.COAST:
+                    drawWaterTexture(ctx, x, y);
+                    break;
+            }
+            
+            ctx.restore();
+        }
+
+        function drawForestTexture(ctx, x, y) {
+            ctx.fillStyle = 'rgba(0,100,0,0.3)';
+            for (let i = 0; i < 8; i++) {
+                const tx = x + (Math.random() - 0.5) * HEX_SIZE;
+                const ty = y + (Math.random() - 0.5) * HEX_SIZE;
+                ctx.beginPath();
+                ctx.arc(tx, ty, 2 + Math.random() * 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawMountainTexture(ctx, x, y) {
+            ctx.strokeStyle = 'rgba(100,100,100,0.5)';
             ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, HEX_SIZE, HEX_SIZE);
+            for (let i = 0; i < 5; i++) {
+                const startX = x + (Math.random() - 0.5) * HEX_SIZE * 0.8;
+                const startY = y + HEX_SIZE * 0.3;
+                const endX = startX + (Math.random() - 0.5) * 10;
+                const endY = y - HEX_SIZE * 0.3;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+            }
+        }
+
+        function drawDesertTexture(ctx, x, y) {
+            ctx.fillStyle = 'rgba(255,215,0,0.2)';
+            for (let i = 0; i < 12; i++) {
+                const tx = x + (Math.random() - 0.5) * HEX_SIZE;
+                const ty = y + (Math.random() - 0.5) * HEX_SIZE;
+                ctx.beginPath();
+                ctx.arc(tx, ty, 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawWaterTexture(ctx, x, y) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 3; i++) {
+                const startX = x - HEX_SIZE * 0.4;
+                const startY = y + (i - 1) * 8;
+                const endX = x + HEX_SIZE * 0.4;
+                const endY = startY + Math.sin(Date.now() * 0.001 + i) * 3;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.quadraticCurveTo(x, endY, endX, startY);
+                ctx.stroke();
+            }
         }
 
         function drawUnit(ctx, unit) {
-            const x = unit.x * HEX_SIZE + HEX_SIZE/2;
-            const y = unit.y * HEX_SIZE + HEX_SIZE/2;
+            const pixelPos = hexToPixel(unit.x, unit.y);
+            const x = pixelPos.x + HEX_SIZE;
+            const y = pixelPos.y + HEX_SIZE;
             
-            // Draw unit background
-            ctx.fillStyle = gameState.players[unit.owner].color;
+            // Draw unit background with 3D effect
+            const gradient = ctx.createRadialGradient(x-5, y-5, 0, x, y, HEX_SIZE/3);
+            gradient.addColorStop(0, lightenColor(gameState.players[unit.owner].color, 40));
+            gradient.addColorStop(1, darkenColor(gameState.players[unit.owner].color, 20));
+            
+            ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(x, y, HEX_SIZE/3, 0, Math.PI * 2);
             ctx.fill();
             
-            // Draw unit icon
+            // Add shadow for depth
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
+            
+            // Draw unit border
+            ctx.strokeStyle = darkenColor(gameState.players[unit.owner].color, 40);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+            
+            // Draw unit icon with better typography
             ctx.fillStyle = '#FFF';
-            ctx.font = '20px Arial';
+            ctx.font = 'bold 18px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeText(unit.type.icon, x, y);
             ctx.fillText(unit.type.icon, x, y);
             
             // Draw selection indicator
             if (gameState.selectedUnit === unit) {
                 ctx.strokeStyle = '#FFD700';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 4;
+                ctx.setLineDash([5, 5]);
                 ctx.beginPath();
-                ctx.arc(x, y, HEX_SIZE/3 + 5, 0, Math.PI * 2);
+                ctx.arc(x, y, HEX_SIZE/3 + 8, 0, Math.PI * 2);
                 ctx.stroke();
+                ctx.setLineDash([]);
+                
+                // Add pulsing glow effect
+                const time = Date.now() * 0.003;
+                const glowRadius = HEX_SIZE/3 + 12 + Math.sin(time) * 4;
+                const glowGradient = ctx.createRadialGradient(x, y, HEX_SIZE/3, x, y, glowRadius);
+                glowGradient.addColorStop(0, 'rgba(255,215,0,0)');
+                glowGradient.addColorStop(1, 'rgba(255,215,0,0.3)');
+                ctx.fillStyle = glowGradient;
+                ctx.beginPath();
+                ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw health bar if damaged
+            if (unit.health < 100) {
+                const barWidth = HEX_SIZE * 0.6;
+                const barHeight = 4;
+                const barX = x - barWidth/2;
+                const barY = y + HEX_SIZE/3 + 8;
+                
+                // Background
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                
+                // Health
+                const healthWidth = (unit.health / 100) * barWidth;
+                const healthColor = unit.health > 50 ? '#4CAF50' : unit.health > 25 ? '#FF9800' : '#F44336';
+                ctx.fillStyle = healthColor;
+                ctx.fillRect(barX, barY, healthWidth, barHeight);
             }
         }
 
@@ -850,8 +1246,12 @@
 
         function handleCanvasClick(e) {
             const rect = e.target.getBoundingClientRect();
-            const x = Math.floor((e.clientX - rect.left) / HEX_SIZE);
-            const y = Math.floor((e.clientY - rect.top) / HEX_SIZE);
+            const pixelX = e.clientX - rect.left;
+            const pixelY = e.clientY - rect.top;
+            
+            const hexCoords = pixelToHex(pixelX - HEX_SIZE, pixelY - HEX_SIZE);
+            const x = hexCoords.col;
+            const y = hexCoords.row;
             
             const tile = getTile(x, y);
             if (!tile) return;
@@ -875,8 +1275,12 @@
             if (!gameState.selectedUnit) return;
             
             const rect = e.target.getBoundingClientRect();
-            const x = Math.floor((e.clientX - rect.left) / HEX_SIZE);
-            const y = Math.floor((e.clientY - rect.top) / HEX_SIZE);
+            const pixelX = e.clientX - rect.left;
+            const pixelY = e.clientY - rect.top;
+            
+            const hexCoords = pixelToHex(pixelX - HEX_SIZE, pixelY - HEX_SIZE);
+            const x = hexCoords.col;
+            const y = hexCoords.row;
             
             moveUnit(gameState.selectedUnit, x, y);
         }
@@ -902,8 +1306,8 @@
             if (targetTile.unit && targetTile.unit !== unit) return false;
             if (targetTile.terrain.movement === Infinity) return false;
             
-            // Calculate movement cost
-            const distance = Math.abs(targetX - unit.x) + Math.abs(targetY - unit.y);
+            // Calculate hex distance
+            const distance = getHexDistance(unit.x, unit.y, targetX, targetY);
             const movementCost = targetTile.terrain.movement * distance;
             
             if (movementCost > unit.movement) return false;
@@ -922,6 +1326,10 @@
             drawMap();
             
             return true;
+        }
+
+        function getHexDistance(x1, y1, x2, y2) {
+            return (Math.abs(x1 - x2) + Math.abs(x1 + y1 - x2 - y2) + Math.abs(y1 - y2)) / 2;
         }
 
         function endTurn() {
